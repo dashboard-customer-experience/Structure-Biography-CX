@@ -15,6 +15,7 @@
     --muted: #656d76;
     --accent: #0969da;
     --green: #1a7f37;
+    --red: #cf222e;
     --radius: 12px;
     --shadow: 0 1px 3px rgba(27,31,36,0.08);
   }
@@ -100,6 +101,36 @@
   }
   .chart-canvas-wrap { position: relative; height: 260px; }
 
+  /* Budget vs Actual section */
+  .budget-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+  }
+  .budget-box h3 { font-size: 0.95rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .budget-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .budget-chart-wrap { position: relative; height: 300px; }
+  .budget-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .budget-table th, .budget-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: center; }
+  .budget-table th { color: var(--muted); font-weight: 600; background: var(--panel2); }
+  .budget-table td:first-child, .budget-table th:first-child { text-align: left; }
+  .budget-table tfoot td { font-weight: 700; border-top: 2px solid var(--border); }
+  .gap-pos { color: var(--green); font-weight: 700; }
+  .gap-neg { color: var(--red); font-weight: 700; }
+  .gap-zero { color: var(--muted); font-weight: 700; }
+  @media (max-width: 760px) {
+    .budget-grid { grid-template-columns: 1fr; }
+    .budget-chart-wrap { height: 260px; }
+  }
+
   .table-section {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -165,6 +196,26 @@
 
   <div class="cards" id="cards"></div>
 
+  <div class="budget-box">
+    <h3>⚖️ Budget vs Actual — per Jabatan (<span id="budgetMonthLabel">-</span>)</h3>
+    <div class="budget-grid">
+      <div class="budget-chart-wrap"><canvas id="chartBudget"></canvas></div>
+      <div>
+        <table class="budget-table" id="budgetTable">
+          <thead>
+            <tr><th>Jabatan</th><th>Budget</th><th>Actual</th><th>Gap</th></tr>
+          </thead>
+          <tbody id="budgetTableBody"></tbody>
+          <tfoot id="budgetTableFoot"></tfoot>
+        </table>
+        <p style="font-size:0.75rem;color:var(--muted);margin-top:10px">
+          Gap = Actual − Budget. <span class="gap-pos">Hijau</span> = surplus (lebih),
+          <span class="gap-neg">merah</span> = kurang dari budget.
+        </p>
+      </div>
+    </div>
+  </div>
+
   <div class="charts">
     <div class="chart-box">
       <h3>🏢 Vendor</h3>
@@ -229,6 +280,8 @@
    1. Buat tab baru di spreadsheet (mis. Desember2026)
    2. File > Share > Publish to web > pilih tab itu > CSV > Publish
    3. Copy link CSV-nya, lalu tambahkan 1 baris di bawah ini.
+   4. (Opsional) Tambahkan juga budget-nya di BUDGET di bawah,
+      dengan "key" yang sama persis dengan "label" bulan.
    Bulan paling ATAS akan jadi default yang tampil.
    ============================================================ */
 const DATA_SOURCES = [
@@ -238,6 +291,16 @@ const DATA_SOURCES = [
   }
   // ,{ label: "Desember 2026", url: "PASTE_LINK_CSV_DESEMBER_DISINI" }
 ];
+
+/* ============================================================
+   BUDGET / HEADCOUNT IDEAL per bulan (hard-code).
+   Key HARUS sama dengan "label" di DATA_SOURCES.
+   Angka bisa beda tiap bulan — tinggal edit di sini.
+   ============================================================ */
+const BUDGET = {
+  "November 2026": { "Shiftlead": 9, "Senior Agent": 50, "Junior Agent": 74 }
+  // ,"Desember 2026": { "Shiftlead": 9, "Senior Agent": 52, "Junior Agent": 75 }
+};
 
 /* Palet warna */
 const PALETTE = [
@@ -339,6 +402,72 @@ function drawPie(canvasId, dataMap) {
   });
 }
 
+/* ---------- Budget vs Actual (bar chart + table) ---------- */
+function buildBudget(rows, monthLabel) {
+  const order = ["Shiftlead", "Senior Agent", "Junior Agent"];
+  const budget = BUDGET[monthLabel] || {};
+
+  // actual per jabatan
+  const actualMap = {};
+  rows.forEach(r => { const k = prettyJabatan((r[3]||"").trim()); if(k) actualMap[k]=(actualMap[k]||0)+1; });
+
+  const budgetVals = order.map(k => budget[k] || 0);
+  const actualVals = order.map(k => actualMap[k] || 0);
+  const gapVals = order.map((k,i) => actualVals[i] - budgetVals[i]);
+
+  document.getElementById("budgetMonthLabel").textContent = monthLabel;
+
+  // bar chart
+  if (charts["chartBudget"]) charts["chartBudget"].destroy();
+  const ctx = document.getElementById("chartBudget").getContext("2d");
+  charts["chartBudget"] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: order,
+      datasets: [
+        { label: "Budget", data: budgetVals, backgroundColor: "#8c959f", borderRadius: 4 },
+        { label: "Actual", data: actualVals, backgroundColor: "#0969da", borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: "#1f2328" }, grid: { display: false } },
+        y: { beginAtZero: true, ticks: { color: "#656d76" }, grid: { color: "#eaeef2" } }
+      },
+      plugins: {
+        legend: { position: "top", labels: { color: "#1f2328", boxWidth: 14, padding: 10 } },
+        tooltip: {
+          callbacks: {
+            afterBody: (items) => {
+              const i = items[0].dataIndex;
+              const g = gapVals[i];
+              const sign = g > 0 ? "+" : "";
+              return "Gap: " + sign + g + (g > 0 ? " (surplus)" : g < 0 ? " (kurang)" : " (pas)");
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // table
+  const gapCell = (g) => {
+    const cls = g > 0 ? "gap-pos" : g < 0 ? "gap-neg" : "gap-zero";
+    const sign = g > 0 ? "+" : "";
+    return `<td class="${cls}">${sign}${g}</td>`;
+  };
+  document.getElementById("budgetTableBody").innerHTML = order.map((k,i) =>
+    `<tr><td>${k}</td><td>${budgetVals[i]}</td><td>${actualVals[i]}</td>${gapCell(gapVals[i])}</tr>`
+  ).join("");
+  const tB = budgetVals.reduce((a,b)=>a+b,0);
+  const tA = actualVals.reduce((a,b)=>a+b,0);
+  const tG = tA - tB;
+  document.getElementById("budgetTableFoot").innerHTML =
+    `<tr><td>Total</td><td>${tB}</td><td>${tA}</td>${gapCell(tG)}</tr>`;
+}
+
 /* ---------- render summary cards ---------- */
 function renderCards(rows) {
   const vendors = Object.keys(countBy(rows, 5)).length;
@@ -401,9 +530,11 @@ function renderTable(rows) {
 }
 
 /* ---------- build everything from rows ---------- */
-function build(rows) {
+function build(rows, monthLabel) {
   currentRows = rows;
   renderCards(rows);
+
+  buildBudget(rows, monthLabel);
 
   // Vendor
   drawPie("chartVendor", countBy(rows, 5));
@@ -429,7 +560,7 @@ function build(rows) {
 }
 
 /* ---------- load data from a source ---------- */
-async function loadData(url) {
+async function loadData(url, monthLabel) {
   document.getElementById("tableStatus").textContent = "Memuat data...";
   try {
     const res = await fetch(url + "&t=" + Date.now());
@@ -437,7 +568,7 @@ async function loadData(url) {
     const parsed = parseCSV(text);
     // drop header + empty rows
     const dataRows = parsed.slice(1).filter(r => (r[0]||"").trim() !== "");
-    build(dataRows);
+    build(dataRows, monthLabel);
     document.getElementById("lastUpdate").textContent = new Date().toLocaleString("id-ID");
   } catch (e) {
     document.getElementById("tableStatus").textContent = "Gagal memuat data. Cek koneksi / link CSV.";
@@ -449,8 +580,12 @@ async function loadData(url) {
 function init() {
   const sel = document.getElementById("monthSelect");
   sel.innerHTML = DATA_SOURCES.map((s,i)=>`<option value="${i}">${s.label}</option>`).join("");
-  sel.addEventListener("change", () => loadData(DATA_SOURCES[sel.value].url));
-  document.getElementById("refreshBtn").addEventListener("click", () => loadData(DATA_SOURCES[sel.value].url));
+  const loadSelected = () => {
+    const s = DATA_SOURCES[sel.value];
+    loadData(s.url, s.label);
+  };
+  sel.addEventListener("change", loadSelected);
+  document.getElementById("refreshBtn").addEventListener("click", loadSelected);
   document.getElementById("searchInput").addEventListener("input", () => renderTable(currentRows));
   document.getElementById("filterVendor").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterRole").addEventListener("change", () => renderTable(currentRows));
@@ -465,7 +600,7 @@ function init() {
     });
   });
 
-  loadData(DATA_SOURCES[0].url);
+  loadData(DATA_SOURCES[0].url, DATA_SOURCES[0].label);
 }
 init();
 </script>
