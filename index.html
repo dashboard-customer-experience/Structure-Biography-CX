@@ -316,30 +316,36 @@
 <script>
 /* ============================================================
    KONFIGURASI SUMBER DATA (CSV publish dari Google Sheets)
-   Untuk menambah bulan baru:
-   1. Buat tab baru di spreadsheet (mis. Desember2026)
-   2. File > Share > Publish to web > pilih tab itu > CSV > Publish
-   3. Copy link CSV-nya, lalu tambahkan 1 baris di bawah ini.
-   4. (Opsional) Tambahkan juga budget-nya di BUDGET di bawah,
-      dengan "key" yang sama persis dengan "label" bulan.
-   Bulan paling ATAS akan jadi default yang tampil.
+   Semua tab di-publish via "Publish to web > Entire Document > CSV".
+   URL = base/pub?gid=<GID>&single=true&output=csv
+   Untuk menambah bulan baru: buat tab baru, lalu tambahkan 1 baris
+   { label, url } di paling ATAS (bulan teratas = default tampil).
    ============================================================ */
+const CSV_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTtvkll7E10fUBwVNoUKRZe3ODKFw1lI1vByu_Fap7SKFoDbsQ8W1rl5jIqegkt9RpbOP8N1R6gmjpo/pub";
+const csv = (gid) => `${CSV_BASE}?gid=${gid}&single=true&output=csv`;
+
 const DATA_SOURCES = [
-  {
-    label: "November 2026",
-    url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTtvkll7E10fUBwVNoUKRZe3ODKFw1lI1vByu_Fap7SKFoDbsQ8W1rl5jIqegkt9RpbOP8N1R6gmjpo/pub?gid=0&single=true&output=csv"
-  }
-  // ,{ label: "Desember 2026", url: "PASTE_LINK_CSV_DESEMBER_DISINI" }
+  { label: "November 2026",  url: csv("0") },
+  { label: "October 2026",   url: csv("678926473") },
+  { label: "September 2026",  url: csv("373429296") },
+  { label: "August 2026",    url: csv("1021753568") },
+  { label: "July 2026",      url: csv("1511757425") },
+  { label: "June 2026",      url: csv("2077103450") },
+  { label: "May 2026",       url: csv("1282857258") },
+  { label: "April 2026",     url: csv("1429011014") },
+  { label: "March 2026",     url: csv("667980584") },
+  { label: "February 2026",  url: csv("1768809931") },
+  { label: "January 2026",   url: csv("1501071264") }
 ];
 
 /* ============================================================
    BUDGET / HEADCOUNT IDEAL per bulan (hard-code).
    Key HARUS sama dengan "label" di DATA_SOURCES.
-   Angka bisa beda tiap bulan — tinggal edit di sini.
+   Bulan tanpa budget akan tampil 0 (actual tetap jalan).
    ============================================================ */
 const BUDGET = {
   "November 2026": { "Shiftlead": 9, "Senior Agent": 50, "Junior Agent": 74 }
-  // ,"Desember 2026": { "Shiftlead": 9, "Senior Agent": 52, "Junior Agent": 75 }
+  // ,"October 2026": { "Shiftlead": 9, "Senior Agent": 50, "Junior Agent": 74 }
 };
 
 /* Palet warna */
@@ -381,11 +387,27 @@ function parseCSV(text) {
   return rows;
 }
 
+/* ---------- normalisasi nilai ---------- */
+function normAgama(v) {
+  const s = (v || "").trim();
+  if (/^muslim$/i.test(s)) return "Islam";
+  return s;
+}
+
 /* ---------- aggregate helper ---------- */
 function countBy(rows, colIndex) {
   const map = {};
   rows.forEach(r => {
     const key = (r[colIndex] || "").trim();
+    if (!key) return;
+    map[key] = (map[key] || 0) + 1;
+  });
+  return map;
+}
+function countAgama(rows) {
+  const map = {};
+  rows.forEach(r => {
+    const key = normAgama(r[7]);
     if (!key) return;
     map[key] = (map[key] || 0) + 1;
   });
@@ -485,10 +507,8 @@ function drawPie(canvasId, dataMap, fixedOrder) {
 
 /* ---------- Cross-tab Jabatan x Role ---------- */
 function buildCrosstab(rows) {
-  // matrix[jabatan][role] = count
   const matrix = {};
   JABATAN_ORDER.forEach(j => { matrix[j] = {}; ROLE_ORDER.forEach(r => matrix[j][r] = 0); });
-  const extraRoles = new Set();   // role di luar ROLE_ORDER
   let hasOther = false;
 
   rows.forEach(r => {
@@ -498,7 +518,6 @@ function buildCrosstab(rows) {
     if (ROLE_ORDER.includes(role)) {
       matrix[jab][role] = (matrix[jab][role]||0) + 1;
     } else {
-      // role kosong / tak dikenal
       matrix[jab]["(lainnya)"] = (matrix[jab]["(lainnya)"]||0) + 1;
       hasOther = true;
     }
@@ -507,13 +526,10 @@ function buildCrosstab(rows) {
   const cols = ROLE_ORDER.slice();
   if (hasOther) cols.push("(lainnya)");
 
-  // header
   document.getElementById("crosstabHead").innerHTML =
     `<tr><th>Jabatan \\ Role</th>${cols.map(c=>`<th>${c}</th>`).join("")}<th class="col-total">Total</th></tr>`;
 
-  // body
   const jabs = Object.keys(matrix);
-  // urutkan: JABATAN_ORDER dulu, lalu sisanya
   jabs.sort((a,b) => {
     const ia = JABATAN_ORDER.indexOf(a), ib = JABATAN_ORDER.indexOf(b);
     return (ia===-1?99:ia) - (ib===-1?99:ib);
@@ -534,7 +550,6 @@ function buildCrosstab(rows) {
     return `<tr><td>${j}</td>${cells}<td class="row-total">${rowTotal}</td></tr>`;
   }).join("");
 
-  // footer totals
   document.getElementById("crosstabFoot").innerHTML =
     `<tr><td>Total</td>${cols.map(c=>`<td>${colTotals[c]}</td>`).join("")}<td>${grand}</td></tr>`;
 }
@@ -620,7 +635,7 @@ function renderCards(rows) {
 function populateFilters(rows) {
   const vendorSet = [...new Set(rows.map(r => (r[5]||"").trim()).filter(Boolean))].sort();
   const roleSet = [...new Set(rows.map(r => (r[4]||"").trim()).filter(Boolean))].sort();
-  const agamaSet = [...new Set(rows.map(r => (r[7]||"").trim()).filter(Boolean))].sort();
+  const agamaSet = [...new Set(rows.map(r => normAgama(r[7])).filter(Boolean))].sort();
   const tenureSet = TENURE_ORDER.filter(t => rows.some(r => tenureCategory(r[8]) === t));
   const fv = document.getElementById("filterVendor");
   const fr = document.getElementById("filterRole");
@@ -657,7 +672,7 @@ function renderTable(rows) {
     const matchQ = !q || (r[0]||"").toLowerCase().includes(q) || (r[1]||"").toLowerCase().includes(q);
     const matchV = !fv || (r[5]||"").trim() === fv;
     const matchR = !fr || (r[4]||"").trim() === fr;
-    const matchA = !fa || (r[7]||"").trim() === fa;
+    const matchA = !fa || normAgama(r[7]) === fa;
     const matchT = !ft || tenureCategory(r[8]) === ft;
     return matchQ && matchV && matchR && matchA && matchT;
   });
@@ -669,7 +684,7 @@ function renderTable(rows) {
       <td>${roleBadge(r[4]||"")}</td>
       <td>${r[5]||""}</td>
       <td>${r[6]||""}</td>
-      <td>${r[7]||""}</td>
+      <td>${normAgama(r[7])}</td>
       <td>${r[8]||""}</td>
       <td>${tenureBadge(tenureCategory(r[8]))}</td>
     </tr>`
@@ -698,7 +713,7 @@ function build(rows, monthLabel) {
 
   drawPie("chartGender", countBy(rows, 6));
 
-  drawPie("chartAgama", countBy(rows, 7));
+  drawPie("chartAgama", countAgama(rows));
 
   const ten = {};
   rows.forEach(r => { const k = tenureCategory(r[8]); ten[k]=(ten[k]||0)+1; });
