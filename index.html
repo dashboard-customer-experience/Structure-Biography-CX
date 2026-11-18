@@ -237,6 +237,10 @@
       <h3>🕊️ Agama</h3>
       <div class="chart-canvas-wrap"><canvas id="chartAgama"></canvas></div>
     </div>
+    <div class="chart-box">
+      <h3>⏳ Tenure (Masa Kerja)</h3>
+      <div class="chart-canvas-wrap"><canvas id="chartTenure"></canvas></div>
+    </div>
   </div>
 
   <div class="table-section">
@@ -247,6 +251,7 @@
         <select class="filter-select" id="filterVendor"><option value="">Semua Vendor</option></select>
         <select class="filter-select" id="filterRole"><option value="">Semua Role</option></select>
         <select class="filter-select" id="filterAgama"><option value="">Semua Agama</option></select>
+        <select class="filter-select" id="filterTenure"><option value="">Semua Tenure</option></select>
       </div>
     </div>
     <div class="table-scroll">
@@ -260,6 +265,8 @@
             <th data-col="5">Vendor</th>
             <th data-col="6">Gender</th>
             <th data-col="7">Agama</th>
+            <th data-col="8">Join Date</th>
+            <th>Tenure</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -308,6 +315,9 @@ const PALETTE = [
   "#bf3989","#1b7c83","#e16f24","#2da44e","#a475f9"
 ];
 
+/* Kategori tenure (urutan tampil) */
+const TENURE_ORDER = ["< 3 bulan", "3 - 6 bulan", "6 - 12 bulan", "> 12 bulan", "Tidak diketahui"];
+
 let charts = {};
 let currentRows = [];
 
@@ -345,6 +355,44 @@ function countBy(rows, colIndex) {
   return map;
 }
 
+/* ---------- tenure helpers ---------- */
+/* Parse tanggal format DD/MM/YYYY (atau D/M/YYYY). Return Date atau null. */
+function parseJoinDate(s) {
+  if (!s) return null;
+  s = s.trim();
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (!m) {
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+  let [_, dd, mm, yy] = m;
+  dd = +dd; mm = +mm; yy = +yy;
+  if (yy < 100) yy += 2000;
+  const d = new Date(yy, mm - 1, dd);
+  return isNaN(d) ? null : d;
+}
+
+/* Hitung selisih bulan dari joinDate ke hari ini (live). */
+function monthsSince(joinDate, now) {
+  if (!joinDate) return null;
+  let months = (now.getFullYear() - joinDate.getFullYear()) * 12
+             + (now.getMonth() - joinDate.getMonth());
+  if (now.getDate() < joinDate.getDate()) months -= 1; // belum genap sebulan
+  return months;
+}
+
+/* Kategorikan tenure berdasar jumlah bulan. */
+function tenureCategory(joinStr) {
+  const d = parseJoinDate(joinStr);
+  if (!d) return "Tidak diketahui";
+  const months = monthsSince(d, new Date());
+  if (months < 0) return "Tidak diketahui";
+  if (months < 3) return "< 3 bulan";
+  if (months < 6) return "3 - 6 bulan";
+  if (months < 12) return "6 - 12 bulan";
+  return "> 12 bulan";
+}
+
 /* ---------- pretty label mapping ---------- */
 function prettyJabatan(v) {
   if (/SHIFTLEAD/i.test(v)) return "Shiftlead";
@@ -363,8 +411,9 @@ function prettyRole(v) {
 }
 
 /* ---------- draw/refresh a pie chart ---------- */
-function drawPie(canvasId, dataMap) {
-  const labels = Object.keys(dataMap);
+function drawPie(canvasId, dataMap, fixedOrder) {
+  let labels = Object.keys(dataMap);
+  if (fixedOrder) labels = fixedOrder.filter(l => dataMap[l] !== undefined);
   const values = labels.map(l => dataMap[l]);
   const total = values.reduce((a,b)=>a+b,0);
   if (charts[canvasId]) charts[canvasId].destroy();
@@ -407,7 +456,6 @@ function buildBudget(rows, monthLabel) {
   const order = ["Shiftlead", "Senior Agent", "Junior Agent"];
   const budget = BUDGET[monthLabel] || {};
 
-  // actual per jabatan
   const actualMap = {};
   rows.forEach(r => { const k = prettyJabatan((r[3]||"").trim()); if(k) actualMap[k]=(actualMap[k]||0)+1; });
 
@@ -417,7 +465,6 @@ function buildBudget(rows, monthLabel) {
 
   document.getElementById("budgetMonthLabel").textContent = monthLabel;
 
-  // bar chart
   if (charts["chartBudget"]) charts["chartBudget"].destroy();
   const ctx = document.getElementById("chartBudget").getContext("2d");
   charts["chartBudget"] = new Chart(ctx, {
@@ -452,7 +499,6 @@ function buildBudget(rows, monthLabel) {
     }
   });
 
-  // table
   const gapCell = (g) => {
     const cls = g > 0 ? "gap-pos" : g < 0 ? "gap-neg" : "gap-zero";
     const sign = g > 0 ? "+" : "";
@@ -487,12 +533,15 @@ function populateFilters(rows) {
   const vendorSet = [...new Set(rows.map(r => (r[5]||"").trim()).filter(Boolean))].sort();
   const roleSet = [...new Set(rows.map(r => (r[4]||"").trim()).filter(Boolean))].sort();
   const agamaSet = [...new Set(rows.map(r => (r[7]||"").trim()).filter(Boolean))].sort();
+  const tenureSet = TENURE_ORDER.filter(t => rows.some(r => tenureCategory(r[8]) === t));
   const fv = document.getElementById("filterVendor");
   const fr = document.getElementById("filterRole");
   const fa = document.getElementById("filterAgama");
+  const ft = document.getElementById("filterTenure");
   fv.innerHTML = '<option value="">Semua Vendor</option>' + vendorSet.map(v=>`<option value="${v}">${v}</option>`).join("");
   fr.innerHTML = '<option value="">Semua Role</option>' + roleSet.map(v=>`<option value="${v}">${prettyRole(v)}</option>`).join("");
   fa.innerHTML = '<option value="">Semua Agama</option>' + agamaSet.map(v=>`<option value="${v}">${v}</option>`).join("");
+  ft.innerHTML = '<option value="">Semua Tenure</option>' + tenureSet.map(v=>`<option value="${v}">${v}</option>`).join("");
 }
 
 /* ---------- render table ---------- */
@@ -502,17 +551,27 @@ function roleBadge(role) {
   const col = colors[p] || "#656d76";
   return `<span class="badge" style="background:${col}1a;color:${col}">${p}</span>`;
 }
+function tenureBadge(cat) {
+  const colors = {
+    "< 3 bulan":"#cf222e", "3 - 6 bulan":"#bf8700",
+    "6 - 12 bulan":"#0969da", "> 12 bulan":"#1a7f37", "Tidak diketahui":"#656d76"
+  };
+  const col = colors[cat] || "#656d76";
+  return `<span class="badge" style="background:${col}1a;color:${col}">${cat}</span>`;
+}
 function renderTable(rows) {
   const q = document.getElementById("searchInput").value.toLowerCase();
   const fv = document.getElementById("filterVendor").value;
   const fr = document.getElementById("filterRole").value;
   const fa = document.getElementById("filterAgama").value;
+  const ft = document.getElementById("filterTenure").value;
   const filtered = rows.filter(r => {
     const matchQ = !q || (r[0]||"").toLowerCase().includes(q) || (r[1]||"").toLowerCase().includes(q);
     const matchV = !fv || (r[5]||"").trim() === fv;
     const matchR = !fr || (r[4]||"").trim() === fr;
     const matchA = !fa || (r[7]||"").trim() === fa;
-    return matchQ && matchV && matchR && matchA;
+    const matchT = !ft || tenureCategory(r[8]) === ft;
+    return matchQ && matchV && matchR && matchA && matchT;
   });
   document.getElementById("tableBody").innerHTML = filtered.map(r =>
     `<tr>
@@ -523,6 +582,8 @@ function renderTable(rows) {
       <td>${r[5]||""}</td>
       <td>${r[6]||""}</td>
       <td>${r[7]||""}</td>
+      <td>${r[8]||""}</td>
+      <td>${tenureBadge(tenureCategory(r[8]))}</td>
     </tr>`
   ).join("");
   document.getElementById("tableStatus").textContent =
@@ -536,24 +597,24 @@ function build(rows, monthLabel) {
 
   buildBudget(rows, monthLabel);
 
-  // Vendor
   drawPie("chartVendor", countBy(rows, 5));
 
-  // Jabatan (mapped)
   const jab = {};
   rows.forEach(r => { const k = prettyJabatan((r[3]||"").trim()); if(k) jab[k]=(jab[k]||0)+1; });
   drawPie("chartJabatan", jab);
 
-  // Role (mapped)
   const role = {};
   rows.forEach(r => { const k = prettyRole((r[4]||"").trim()); if(k) role[k]=(role[k]||0)+1; });
   drawPie("chartRole", role);
 
-  // Gender
   drawPie("chartGender", countBy(rows, 6));
 
-  // Agama
   drawPie("chartAgama", countBy(rows, 7));
+
+  // Tenure (live dari hari ini)
+  const ten = {};
+  rows.forEach(r => { const k = tenureCategory(r[8]); ten[k]=(ten[k]||0)+1; });
+  drawPie("chartTenure", ten, TENURE_ORDER);
 
   populateFilters(rows);
   renderTable(rows);
@@ -566,7 +627,6 @@ async function loadData(url, monthLabel) {
     const res = await fetch(url + "&t=" + Date.now());
     const text = await res.text();
     const parsed = parseCSV(text);
-    // drop header + empty rows
     const dataRows = parsed.slice(1).filter(r => (r[0]||"").trim() !== "");
     build(dataRows, monthLabel);
     document.getElementById("lastUpdate").textContent = new Date().toLocaleString("id-ID");
@@ -590,9 +650,10 @@ function init() {
   document.getElementById("filterVendor").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterRole").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterAgama").addEventListener("change", () => renderTable(currentRows));
+  document.getElementById("filterTenure").addEventListener("change", () => renderTable(currentRows));
 
-  // sortable columns
-  document.querySelectorAll("#dataTable th").forEach(th => {
+  document.querySelectorAll("#dataTable th").forEach((th, idx) => {
+    if (th.dataset.col === undefined) return;
     th.addEventListener("click", () => {
       const col = +th.dataset.col;
       currentRows.sort((a,b)=> (a[col]||"").localeCompare(b[col]||""));
