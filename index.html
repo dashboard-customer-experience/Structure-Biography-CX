@@ -7,15 +7,16 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #0d1117;
-    --panel: #161b22;
-    --panel2: #1c2330;
-    --border: #30363d;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --accent: #2f81f7;
-    --green: #3fb950;
+    --bg: #f6f8fa;
+    --panel: #ffffff;
+    --panel2: #f0f3f6;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --muted: #656d76;
+    --accent: #0969da;
+    --green: #1a7f37;
     --radius: 12px;
+    --shadow: 0 1px 3px rgba(27,31,36,0.08);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -42,7 +43,7 @@
   .subtitle { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
   .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   select {
-    background: var(--panel2);
+    background: var(--panel);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -51,7 +52,7 @@
     cursor: pointer;
   }
   .refresh-btn {
-    background: var(--panel2);
+    background: var(--panel);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -59,7 +60,7 @@
     font-size: 0.9rem;
     cursor: pointer;
   }
-  .refresh-btn:hover { border-color: var(--accent); }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
 
   .cards {
     display: grid;
@@ -72,6 +73,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 16px;
+    box-shadow: var(--shadow);
   }
   .card .num { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
   .card .lbl { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
@@ -87,6 +89,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 16px;
+    box-shadow: var(--shadow);
   }
   .chart-box h3 {
     font-size: 0.95rem;
@@ -102,6 +105,7 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 16px;
+    box-shadow: var(--shadow);
   }
   .table-head {
     display: flex;
@@ -114,7 +118,7 @@
   .table-head h3 { font-size: 0.95rem; }
   .search-wrap { display: flex; gap: 8px; flex-wrap: wrap; }
   input[type="text"], .filter-select {
-    background: var(--panel2);
+    background: var(--panel);
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -125,7 +129,7 @@
   .table-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); cursor: pointer; }
+  th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel2); cursor: pointer; }
   th:hover { color: var(--text); }
   tbody tr:hover { background: var(--panel2); }
   .badge {
@@ -231,8 +235,8 @@ const DATA_SOURCES = [
 
 /* Palet warna */
 const PALETTE = [
-  "#2f81f7","#3fb950","#e3b341","#f85149","#a371f7",
-  "#db61a2","#39c5cf","#ff9800","#56d364","#bc8cff"
+  "#0969da","#1a7f37","#bf8700","#cf222e","#8250df",
+  "#bf3989","#1b7c83","#e16f24","#2da44e","#a475f9"
 ];
 
 let charts = {};
@@ -303,7 +307,7 @@ function drawPie(canvasId, dataMap) {
       datasets: [{
         data: values,
         backgroundColor: labels.map((_,i)=>PALETTE[i % PALETTE.length]),
-        borderColor: "#161b22",
+        borderColor: "#ffffff",
         borderWidth: 2
       }]
     },
@@ -313,7 +317,7 @@ function drawPie(canvasId, dataMap) {
       plugins: {
         legend: {
           position: "bottom",
-          labels: { color: "#e6edf3", font: { size: 11 }, boxWidth: 12, padding: 8 }
+          labels: { color: "#1f2328", font: { size: 11 }, boxWidth: 12, padding: 8 }
         },
         tooltip: {
           callbacks: {
@@ -355,10 +359,10 @@ function populateFilters(rows) {
 
 /* ---------- render table ---------- */
 function roleBadge(role) {
-  const colors = { "HCU":"#2f81f7","CCU":"#3fb950","Shiftlead":"#e3b341","New Joiner":"#a371f7" };
+  const colors = { "HCU":"#0969da","CCU":"#1a7f37","Shiftlead":"#bf8700","New Joiner":"#8250df" };
   const p = prettyRole(role);
-  const col = colors[p] || "#8b949e";
-  return `<span class="badge" style="background:${col}22;color:${col}">${p}</span>`;
+  const col = colors[p] || "#656d76";
+  return `<span class="badge" style="background:${col}1a;color:${col}">${p}</span>`;
 }
 function renderTable(rows) {
   const q = document.getElementById("searchInput").value.toLowerCase();
