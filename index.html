@@ -131,6 +131,25 @@
     .budget-chart-wrap { height: 260px; }
   }
 
+  /* Cross-tab section */
+  .crosstab-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+  }
+  .crosstab-box h3 { font-size: 0.95rem; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .crosstab-scroll { overflow-x: auto; }
+  .crosstab-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 480px; }
+  .crosstab-table th, .crosstab-table td { padding: 10px 10px; border-bottom: 1px solid var(--border); text-align: center; }
+  .crosstab-table thead th { color: var(--muted); font-weight: 600; background: var(--panel2); }
+  .crosstab-table td:first-child, .crosstab-table th:first-child { text-align: left; font-weight: 600; }
+  .crosstab-table .col-total, .crosstab-table .row-total { font-weight: 700; background: var(--panel2); }
+  .crosstab-table tfoot td { font-weight: 700; border-top: 2px solid var(--border); background: var(--panel2); }
+  .ct-zero { color: #b1b7be; }
+
   .table-section {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -214,6 +233,20 @@
         </p>
       </div>
     </div>
+  </div>
+
+  <div class="crosstab-box">
+    <h3>🧮 Komposisi Jabatan × Role</h3>
+    <div class="crosstab-scroll">
+      <table class="crosstab-table" id="crosstabTable">
+        <thead id="crosstabHead"></thead>
+        <tbody id="crosstabBody"></tbody>
+        <tfoot id="crosstabFoot"></tfoot>
+      </table>
+    </div>
+    <p style="font-size:0.75rem;color:var(--muted);margin-top:10px">
+      Jumlah orang per kombinasi Jabatan (baris) dan Role/Unit (kolom). Baris & kolom "Total" adalah subtotalnya.
+    </p>
   </div>
 
   <div class="charts">
@@ -318,6 +351,10 @@ const PALETTE = [
 /* Kategori tenure (urutan tampil) */
 const TENURE_ORDER = ["< 3 bulan", "3 - 6 bulan", "6 - 12 bulan", "> 12 bulan", "Tidak diketahui"];
 
+/* Urutan tetap untuk cross-tab */
+const JABATAN_ORDER = ["Junior Agent", "Senior Agent", "Shiftlead"];
+const ROLE_ORDER = ["CCU", "HCU", "New Joiner", "Shiftlead"];
+
 let charts = {};
 let currentRows = [];
 
@@ -356,7 +393,6 @@ function countBy(rows, colIndex) {
 }
 
 /* ---------- tenure helpers ---------- */
-/* Parse tanggal format DD/MM/YYYY (atau D/M/YYYY). Return Date atau null. */
 function parseJoinDate(s) {
   if (!s) return null;
   s = s.trim();
@@ -371,17 +407,13 @@ function parseJoinDate(s) {
   const d = new Date(yy, mm - 1, dd);
   return isNaN(d) ? null : d;
 }
-
-/* Hitung selisih bulan dari joinDate ke hari ini (live). */
 function monthsSince(joinDate, now) {
   if (!joinDate) return null;
   let months = (now.getFullYear() - joinDate.getFullYear()) * 12
              + (now.getMonth() - joinDate.getMonth());
-  if (now.getDate() < joinDate.getDate()) months -= 1; // belum genap sebulan
+  if (now.getDate() < joinDate.getDate()) months -= 1;
   return months;
 }
-
-/* Kategorikan tenure berdasar jumlah bulan. */
 function tenureCategory(joinStr) {
   const d = parseJoinDate(joinStr);
   if (!d) return "Tidak diketahui";
@@ -449,6 +481,62 @@ function drawPie(canvasId, dataMap, fixedOrder) {
       }
     }
   });
+}
+
+/* ---------- Cross-tab Jabatan x Role ---------- */
+function buildCrosstab(rows) {
+  // matrix[jabatan][role] = count
+  const matrix = {};
+  JABATAN_ORDER.forEach(j => { matrix[j] = {}; ROLE_ORDER.forEach(r => matrix[j][r] = 0); });
+  const extraRoles = new Set();   // role di luar ROLE_ORDER
+  let hasOther = false;
+
+  rows.forEach(r => {
+    const jab = prettyJabatan((r[3]||"").trim());
+    const role = prettyRole((r[4]||"").trim());
+    if (!matrix[jab]) { matrix[jab] = {}; ROLE_ORDER.forEach(rr => matrix[jab][rr]=0); }
+    if (ROLE_ORDER.includes(role)) {
+      matrix[jab][role] = (matrix[jab][role]||0) + 1;
+    } else {
+      // role kosong / tak dikenal
+      matrix[jab]["(lainnya)"] = (matrix[jab]["(lainnya)"]||0) + 1;
+      hasOther = true;
+    }
+  });
+
+  const cols = ROLE_ORDER.slice();
+  if (hasOther) cols.push("(lainnya)");
+
+  // header
+  document.getElementById("crosstabHead").innerHTML =
+    `<tr><th>Jabatan \\ Role</th>${cols.map(c=>`<th>${c}</th>`).join("")}<th class="col-total">Total</th></tr>`;
+
+  // body
+  const jabs = Object.keys(matrix);
+  // urutkan: JABATAN_ORDER dulu, lalu sisanya
+  jabs.sort((a,b) => {
+    const ia = JABATAN_ORDER.indexOf(a), ib = JABATAN_ORDER.indexOf(b);
+    return (ia===-1?99:ia) - (ib===-1?99:ib);
+  });
+
+  const colTotals = {};
+  cols.forEach(c => colTotals[c] = 0);
+  let grand = 0;
+
+  document.getElementById("crosstabBody").innerHTML = jabs.map(j => {
+    let rowTotal = 0;
+    const cells = cols.map(c => {
+      const v = matrix[j][c] || 0;
+      rowTotal += v; colTotals[c] += v;
+      return `<td class="${v===0?'ct-zero':''}">${v}</td>`;
+    }).join("");
+    grand += rowTotal;
+    return `<tr><td>${j}</td>${cells}<td class="row-total">${rowTotal}</td></tr>`;
+  }).join("");
+
+  // footer totals
+  document.getElementById("crosstabFoot").innerHTML =
+    `<tr><td>Total</td>${cols.map(c=>`<td>${colTotals[c]}</td>`).join("")}<td>${grand}</td></tr>`;
 }
 
 /* ---------- Budget vs Actual (bar chart + table) ---------- */
@@ -596,6 +684,7 @@ function build(rows, monthLabel) {
   renderCards(rows);
 
   buildBudget(rows, monthLabel);
+  buildCrosstab(rows);
 
   drawPie("chartVendor", countBy(rows, 5));
 
@@ -611,7 +700,6 @@ function build(rows, monthLabel) {
 
   drawPie("chartAgama", countBy(rows, 7));
 
-  // Tenure (live dari hari ini)
   const ten = {};
   rows.forEach(r => { const k = tenureCategory(r[8]); ten[k]=(ten[k]||0)+1; });
   drawPie("chartTenure", ten, TENURE_ORDER);
@@ -652,7 +740,7 @@ function init() {
   document.getElementById("filterAgama").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterTenure").addEventListener("change", () => renderTable(currentRows));
 
-  document.querySelectorAll("#dataTable th").forEach((th, idx) => {
+  document.querySelectorAll("#dataTable th").forEach((th) => {
     if (th.dataset.col === undefined) return;
     th.addEventListener("click", () => {
       const col = +th.dataset.col;
