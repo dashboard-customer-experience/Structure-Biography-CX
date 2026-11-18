@@ -182,6 +182,10 @@
       <h3>⚧ Jenis Kelamin</h3>
       <div class="chart-canvas-wrap"><canvas id="chartGender"></canvas></div>
     </div>
+    <div class="chart-box">
+      <h3>🕊️ Agama</h3>
+      <div class="chart-canvas-wrap"><canvas id="chartAgama"></canvas></div>
+    </div>
   </div>
 
   <div class="table-section">
@@ -191,6 +195,7 @@
         <input type="text" id="searchInput" placeholder="Cari nama / ID..." />
         <select class="filter-select" id="filterVendor"><option value="">Semua Vendor</option></select>
         <select class="filter-select" id="filterRole"><option value="">Semua Role</option></select>
+        <select class="filter-select" id="filterAgama"><option value="">Semua Agama</option></select>
       </div>
     </div>
     <div class="table-scroll">
@@ -203,6 +208,7 @@
             <th data-col="4">Role</th>
             <th data-col="5">Vendor</th>
             <th data-col="6">Gender</th>
+            <th data-col="7">Agama</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -351,10 +357,13 @@ function renderCards(rows) {
 function populateFilters(rows) {
   const vendorSet = [...new Set(rows.map(r => (r[5]||"").trim()).filter(Boolean))].sort();
   const roleSet = [...new Set(rows.map(r => (r[4]||"").trim()).filter(Boolean))].sort();
+  const agamaSet = [...new Set(rows.map(r => (r[7]||"").trim()).filter(Boolean))].sort();
   const fv = document.getElementById("filterVendor");
   const fr = document.getElementById("filterRole");
+  const fa = document.getElementById("filterAgama");
   fv.innerHTML = '<option value="">Semua Vendor</option>' + vendorSet.map(v=>`<option value="${v}">${v}</option>`).join("");
   fr.innerHTML = '<option value="">Semua Role</option>' + roleSet.map(v=>`<option value="${v}">${prettyRole(v)}</option>`).join("");
+  fa.innerHTML = '<option value="">Semua Agama</option>' + agamaSet.map(v=>`<option value="${v}">${v}</option>`).join("");
 }
 
 /* ---------- render table ---------- */
@@ -368,11 +377,13 @@ function renderTable(rows) {
   const q = document.getElementById("searchInput").value.toLowerCase();
   const fv = document.getElementById("filterVendor").value;
   const fr = document.getElementById("filterRole").value;
+  const fa = document.getElementById("filterAgama").value;
   const filtered = rows.filter(r => {
     const matchQ = !q || (r[0]||"").toLowerCase().includes(q) || (r[1]||"").toLowerCase().includes(q);
     const matchV = !fv || (r[5]||"").trim() === fv;
     const matchR = !fr || (r[4]||"").trim() === fr;
-    return matchQ && matchV && matchR;
+    const matchA = !fa || (r[7]||"").trim() === fa;
+    return matchQ && matchV && matchR && matchA;
   });
   document.getElementById("tableBody").innerHTML = filtered.map(r =>
     `<tr>
@@ -382,6 +393,7 @@ function renderTable(rows) {
       <td>${roleBadge(r[4]||"")}</td>
       <td>${r[5]||""}</td>
       <td>${r[6]||""}</td>
+      <td>${r[7]||""}</td>
     </tr>`
   ).join("");
   document.getElementById("tableStatus").textContent =
@@ -408,6 +420,9 @@ function build(rows) {
 
   // Gender
   drawPie("chartGender", countBy(rows, 6));
+
+  // Agama
+  drawPie("chartAgama", countBy(rows, 7));
 
   populateFilters(rows);
   renderTable(rows);
@@ -439,6 +454,7 @@ function init() {
   document.getElementById("searchInput").addEventListener("input", () => renderTable(currentRows));
   document.getElementById("filterVendor").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterRole").addEventListener("change", () => renderTable(currentRows));
+  document.getElementById("filterAgama").addEventListener("change", () => renderTable(currentRows));
 
   // sortable columns
   document.querySelectorAll("#dataTable th").forEach(th => {
