@@ -101,6 +101,29 @@
   }
   .chart-canvas-wrap { position: relative; height: 260px; }
 
+  /* Resume bulanan */
+  .resume-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 24px;
+  }
+  .resume-box h3 { font-size: 0.95rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .resume-box .hint { font-size: 0.75rem; color: var(--muted); margin-bottom: 14px; }
+  .resume-scroll { overflow-x: auto; }
+  .resume-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 720px; }
+  .resume-table th, .resume-table td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: center; }
+  .resume-table thead th { color: var(--muted); font-weight: 600; background: var(--panel2); position: sticky; top: 0; }
+  .resume-table td:first-child, .resume-table th:first-child { text-align: left; font-weight: 600; white-space: nowrap; }
+  .resume-table .grp-total { background: #ddf4ff; font-weight: 700; }
+  .resume-table .grp-role { background: #eef7ee; }
+  .resume-table .grp-jab  { background: #fff6e6; }
+  .resume-table tbody tr:hover { background: var(--panel2); }
+  .resume-table tfoot td { font-weight: 700; border-top: 2px solid var(--border); background: var(--panel2); }
+  .resume-latest { outline: 2px solid var(--accent); outline-offset: -2px; }
+
   /* Budget vs Actual section */
   .budget-box {
     background: var(--panel);
@@ -212,6 +235,35 @@
       <button class="refresh-btn" id="refreshBtn" title="Muat ulang data">⟳</button>
     </div>
   </header>
+
+  <div class="resume-box">
+    <h3>📅 Resume Manpower Bulanan (Januari – November 2026)</h3>
+    <div class="hint">Rekap jumlah MP per bulan. Kolom CCU/HCU/Shiftlead/New Joiner dari <b>Role</b>; Junior/Senior/Shiftlead dari <b>Jabatan</b>. Baris terbaru ditandai garis biru.</div>
+    <div class="resume-scroll">
+      <table class="resume-table" id="resumeTable">
+        <thead>
+          <tr>
+            <th rowspan="2">Bulan</th>
+            <th rowspan="2" class="grp-total">Total MP</th>
+            <th colspan="4" class="grp-role">Role / Unit</th>
+            <th colspan="3" class="grp-jab">Jabatan</th>
+          </tr>
+          <tr>
+            <th class="grp-role">CCU</th>
+            <th class="grp-role">HCU</th>
+            <th class="grp-role">Shiftlead</th>
+            <th class="grp-role">New Joiner</th>
+            <th class="grp-jab">Junior</th>
+            <th class="grp-jab">Senior</th>
+            <th class="grp-jab">Shiftlead</th>
+          </tr>
+        </thead>
+        <tbody id="resumeBody">
+          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Memuat data 11 bulan...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 
   <div class="cards" id="cards"></div>
 
@@ -338,14 +390,17 @@ const DATA_SOURCES = [
   { label: "January 2026",   url: csv("1501071264") }
 ];
 
+/* Urutan kronologis untuk resume (Jan -> Nov) */
+const RESUME_ORDER = [
+  "January 2026","February 2026","March 2026","April 2026","May 2026","June 2026",
+  "July 2026","August 2026","September 2026","October 2026","November 2026"
+];
+
 /* ============================================================
    BUDGET / HEADCOUNT IDEAL per bulan (hard-code).
-   Key HARUS sama dengan "label" di DATA_SOURCES.
-   Bulan tanpa budget akan tampil 0 (actual tetap jalan).
    ============================================================ */
 const BUDGET = {
   "November 2026": { "Shiftlead": 9, "Senior Agent": 50, "Junior Agent": 74 }
-  // ,"October 2026": { "Shiftlead": 9, "Senior Agent": 50, "Junior Agent": 74 }
 };
 
 /* Palet warna */
@@ -503,6 +558,61 @@ function drawPie(canvasId, dataMap, fixedOrder) {
       }
     }
   });
+}
+
+/* ---------- Resume bulanan (semua bulan) ---------- */
+async function buildResume() {
+  const results = {};
+  await Promise.all(DATA_SOURCES.map(async (src) => {
+    try {
+      const res = await fetch(src.url + "&t=" + Date.now());
+      const text = await res.text();
+      const parsed = parseCSV(text);
+      const rows = parsed.slice(1).filter(r => (r[0]||"").trim() !== "");
+      // hitung metrik
+      const roleCount = { "CCU":0, "HCU":0, "Shiftlead":0, "New Joiner":0 };
+      const jabCount  = { "Junior Agent":0, "Senior Agent":0, "Shiftlead":0 };
+      rows.forEach(r => {
+        const role = prettyRole((r[4]||"").trim());
+        if (roleCount[role] !== undefined) roleCount[role]++;
+        const jab = prettyJabatan((r[3]||"").trim());
+        if (jabCount[jab] !== undefined) jabCount[jab]++;
+      });
+      results[src.label] = {
+        total: rows.length,
+        ccu: roleCount["CCU"], hcu: roleCount["HCU"],
+        slRole: roleCount["Shiftlead"], nj: roleCount["New Joiner"],
+        junior: jabCount["Junior Agent"], senior: jabCount["Senior Agent"], slJab: jabCount["Shiftlead"]
+      };
+    } catch (e) {
+      results[src.label] = null;
+    }
+  }));
+
+  const body = document.getElementById("resumeBody");
+  const latest = DATA_SOURCES[0].label; // bulan paling baru
+  let rowsHtml = "";
+  RESUME_ORDER.forEach(label => {
+    const d = results[label];
+    const isLatest = (label === latest);
+    const cls = isLatest ? ' class="resume-latest"' : '';
+    if (!d) {
+      rowsHtml += `<tr${cls}><td>${label}</td><td colspan="8" style="color:var(--muted)">(gagal dimuat)</td></tr>`;
+      return;
+    }
+    rowsHtml += `<tr${cls}>
+      <td>${label}${isLatest ? ' ⭐' : ''}</td>
+      <td class="grp-total">${d.total}</td>
+      <td class="grp-role">${d.ccu}</td>
+      <td class="grp-role">${d.hcu}</td>
+      <td class="grp-role">${d.slRole}</td>
+      <td class="grp-role">${d.nj}</td>
+      <td class="grp-jab">${d.junior}</td>
+      <td class="grp-jab">${d.senior}</td>
+      <td class="grp-jab">${d.slJab}</td>
+    </tr>`;
+  });
+  body.innerHTML = rowsHtml;
 }
 
 /* ---------- Cross-tab Jabatan x Role ---------- */
@@ -748,7 +858,7 @@ function init() {
     loadData(s.url, s.label);
   };
   sel.addEventListener("change", loadSelected);
-  document.getElementById("refreshBtn").addEventListener("click", loadSelected);
+  document.getElementById("refreshBtn").addEventListener("click", () => { loadSelected(); buildResume(); });
   document.getElementById("searchInput").addEventListener("input", () => renderTable(currentRows));
   document.getElementById("filterVendor").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterRole").addEventListener("change", () => renderTable(currentRows));
@@ -765,6 +875,7 @@ function init() {
   });
 
   loadData(DATA_SOURCES[0].url, DATA_SOURCES[0].label);
+  buildResume();
 }
 init();
 </script>
