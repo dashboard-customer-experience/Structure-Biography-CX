@@ -281,7 +281,7 @@
         </table>
         <p style="font-size:0.75rem;color:var(--muted);margin-top:10px">
           Gap = Actual − Budget. <span class="gap-pos">Hijau</span> = surplus (lebih),
-          <span class="gap-neg">merah</span> = kurang dari budget.
+          <span class="gap-neg">merah</span> = kurang dari budget. Budget dibaca dari tab <b>#Budget</b>.
         </p>
       </div>
     </div>
@@ -376,6 +376,9 @@
 const CSV_BASE = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTtvkll7E10fUBwVNoUKRZe3ODKFw1lI1vByu_Fap7SKFoDbsQ8W1rl5jIqegkt9RpbOP8N1R6gmjpo/pub";
 const csv = (gid) => `${CSV_BASE}?gid=${gid}&single=true&output=csv`;
 
+/* gid tab #Budget */
+const BUDGET_URL = csv("798494502");
+
 const DATA_SOURCES = [
   { label: "November 2026",  url: csv("0") },
   { label: "October 2026",   url: csv("678926473") },
@@ -397,11 +400,11 @@ const RESUME_ORDER = [
 ];
 
 /* ============================================================
-   BUDGET / HEADCOUNT IDEAL per bulan (hard-code).
+   BUDGET: otomatis dibaca dari tab #Budget (lihat loadBudget()).
+   Diisi runtime. Key = label bulan ("November 2026"), value =
+   { Shiftlead, "Senior Agent", "Junior Agent" }.
    ============================================================ */
-const BUDGET = {
-  "November 2026": { "Shiftlead": 9, "Senior Agent": 50, "Junior Agent": 74 }
-};
+let BUDGET = {};
 
 /* Palet warna */
 const PALETTE = [
@@ -415,6 +418,14 @@ const TENURE_ORDER = ["< 3 bulan", "3 - 6 bulan", "6 - 12 bulan", "> 12 bulan", 
 /* Urutan tetap untuk cross-tab */
 const JABATAN_ORDER = ["Junior Agent", "Senior Agent", "Shiftlead"];
 const ROLE_ORDER = ["CCU", "HCU", "New Joiner", "Shiftlead"];
+
+/* Nama bulan EN -> label dashboard (tambah tahun) */
+const MONTH_TO_LABEL = {
+  "january":"January 2026","february":"February 2026","march":"March 2026",
+  "april":"April 2026","may":"May 2026","june":"June 2026","july":"July 2026",
+  "august":"August 2026","september":"September 2026","october":"October 2026",
+  "november":"November 2026","december":"December 2026"
+};
 
 let charts = {};
 let currentRows = [];
@@ -440,6 +451,36 @@ function parseCSV(text) {
   }
   if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
   return rows;
+}
+
+/* ---------- load budget dari tab #Budget ---------- */
+async function loadBudget() {
+  try {
+    const res = await fetch(BUDGET_URL + "&t=" + Date.now());
+    const text = await res.text();
+    const parsed = parseCSV(text);
+    const b = {};
+    parsed.forEach(row => {
+      const monthRaw = (row[0] || "").trim().toLowerCase();
+      const label = MONTH_TO_LABEL[monthRaw];
+      if (!label) return; // skip header / baris kosong
+      const sl = parseInt(row[1], 10);
+      const sr = parseInt(row[2], 10);
+      const jr = parseInt(row[3], 10);
+      // hanya simpan kalau ada angka valid
+      if (!isNaN(sl) || !isNaN(sr) || !isNaN(jr)) {
+        b[label] = {
+          "Shiftlead": isNaN(sl) ? 0 : sl,
+          "Senior Agent": isNaN(sr) ? 0 : sr,
+          "Junior Agent": isNaN(jr) ? 0 : jr
+        };
+      }
+    });
+    BUDGET = b;
+  } catch (e) {
+    console.error("Gagal memuat budget:", e);
+    BUDGET = {};
+  }
 }
 
 /* ---------- normalisasi nilai ---------- */
@@ -569,7 +610,6 @@ async function buildResume() {
       const text = await res.text();
       const parsed = parseCSV(text);
       const rows = parsed.slice(1).filter(r => (r[0]||"").trim() !== "");
-      // hitung metrik
       const roleCount = { "CCU":0, "HCU":0, "Shiftlead":0, "New Joiner":0 };
       const jabCount  = { "Junior Agent":0, "Senior Agent":0, "Shiftlead":0 };
       rows.forEach(r => {
@@ -590,7 +630,7 @@ async function buildResume() {
   }));
 
   const body = document.getElementById("resumeBody");
-  const latest = DATA_SOURCES[0].label; // bulan paling baru
+  const latest = DATA_SOURCES[0].label;
   let rowsHtml = "";
   RESUME_ORDER.forEach(label => {
     const d = results[label];
@@ -850,7 +890,7 @@ async function loadData(url, monthLabel) {
 }
 
 /* ---------- init ---------- */
-function init() {
+async function init() {
   const sel = document.getElementById("monthSelect");
   sel.innerHTML = DATA_SOURCES.map((s,i)=>`<option value="${i}">${s.label}</option>`).join("");
   const loadSelected = () => {
@@ -858,7 +898,11 @@ function init() {
     loadData(s.url, s.label);
   };
   sel.addEventListener("change", loadSelected);
-  document.getElementById("refreshBtn").addEventListener("click", () => { loadSelected(); buildResume(); });
+  document.getElementById("refreshBtn").addEventListener("click", async () => {
+    await loadBudget();
+    loadSelected();
+    buildResume();
+  });
   document.getElementById("searchInput").addEventListener("input", () => renderTable(currentRows));
   document.getElementById("filterVendor").addEventListener("change", () => renderTable(currentRows));
   document.getElementById("filterRole").addEventListener("change", () => renderTable(currentRows));
@@ -874,6 +918,8 @@ function init() {
     });
   });
 
+  // muat budget dulu, baru render bulan aktif + resume
+  await loadBudget();
   loadData(DATA_SOURCES[0].url, DATA_SOURCES[0].label);
   buildResume();
 }
